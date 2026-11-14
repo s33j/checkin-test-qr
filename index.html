@@ -292,7 +292,7 @@
         beep('ok');
         showResult('ok', '<div class="icon">✓</div><div class="status">Checked in</div>' +
           '<div class="big">' + esc(p.name) + '</div><div class="detail">' + personLine(p) + '</div>' +
-          '<div class="sub">' + esc(p.id) + (p.regType === 'Walk-in' ? ' · Walk-in' : '') + ' · tap to continue</div>', 2600, resumeScan);
+          '<div class="sub">' + esc(p.id) + (p.regType === 'Walk-in' ? ' · Walk-in' : '') + ' · tap to continue</div>', 0, resumeScan);
       } else if (res.status === 'already') {
         beep('warn');
         showResult('warn', '<div class="icon">!</div><div class="status">Already checked in</div>' +
@@ -466,7 +466,7 @@
       $('walkForm').reset(); $('dupBox').classList.add('hidden');
       showResult('ok', '<div class="icon">✓</div><div class="status">Registered &amp; checked in</div>' +
         '<div class="big">' + esc(p.name) + '</div><div class="detail">' + personLine(p) + '</div>' +
-        '<div class="sub">Walk-in · ' + esc(p.id) + ' · tap to continue</div>', 3500);
+        '<div class="sub">Walk-in · ' + esc(p.id) + ' · tap to continue</div>', 0);
     }).catch(err => { closeResult(); $('walkError').textContent = err.message; })
       .finally(() => { $('walkBtn').disabled = false; $('forceBtn').disabled = false; });
   }
