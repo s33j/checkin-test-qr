@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14213d">
+<title>Event Check-in</title>
+<script>
+  // ==== SETTINGS ============================================================
+  // Paste your Apps Script Web App URL here (Deploy > Manage deployments > Web app URL).
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwGee43mdCWjMhJwn5ORityGEasI5dfNQTJ8R-PUeRfBPp2Cb8CSyI1Fm-cIuyOVtaQ/exec';
+  // ==========================================================================
+</script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --ink: #14213d; --muted: #5c6475; --line: #dde1e8; --bg: #f4f6f9; --card: #fff;
+    --ok: #15803d; --ok-bg: #e7f6ec; --warn: #b45309; --warn-bg: #fdf3e3;
+    --bad: #b91c1c; --bad-bg: #fde8e8; --accent: #2457d6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; }
+  .hidden { display: none !important; }
+
+  header { background: var(--ink); color: #fff; padding: 12px 16px calc(10px);
+    padding-top: max(12px, env(safe-area-inset-top)); }
+  .hrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .event { font-weight: 700; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who { font-size: 13px; opacity: .8; }
+  .linkbtn { background: none; border: 0; color: #fff; text-decoration: underline; opacity: .8; padding: 4px; cursor: pointer; }
+  .counter { display: flex; gap: 18px; margin-top: 8px; font-size: 13px; opacity: .92; }
+  .counter b { font-size: 20px; display: block; line-height: 1.1; }
+
+  nav { display: grid; grid-template-columns: repeat(3, 1fr); background: #fff; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 4; }
+  nav button { border: 0; background: none; padding: 12px 4px; font-weight: 600; color: var(--muted);
+    border-bottom: 3px solid transparent; cursor: pointer; }
+  nav button.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+  main { padding: 16px; max-width: 560px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+  label .opt { font-weight: 400; color: var(--muted); }
+  input, select { width: 100%; padding: 12px; border: 1px solid #c4cad4; border-radius: 10px; background: #fff; }
+  input:focus, select:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 14px; font-weight: 700;
+    background: var(--accent); color: #fff; cursor: pointer; margin-top: 14px; }
+  .btn.secondary { background: #e8ecf3; color: var(--ink); }
+  .btn.small { display: inline-block; width: auto; padding: 9px 14px; margin: 0; font-size: 14px; white-space: nowrap; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .error { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 1em; }
+
+  #reader { width: 100%; border-radius: 14px; overflow: hidden; background: #0b1020; min-height: 260px;
+    display: flex; align-items: center; justify-content: center; color: #9aa3b5; font-size: 14px; }
+  #reader video { width: 100% !important; height: auto !important; display: block; }
+  .scanbar { display: flex; gap: 8px; margin-top: 10px; }
+  .scanbar .btn { margin: 0; }
+  .divider { text-align: center; color: var(--muted); font-size: 13px; margin: 16px 0 4px; }
+
+  .results { list-style: none; padding: 0; margin: 12px 0 0; }
+  .results li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 0; border-top: 1px solid var(--line); }
+  .results .nm { font-weight: 700; }
+  .results .meta { font-size: 13px; color: var(--muted); }
+  .tag { font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 99px; background: var(--ok-bg); color: var(--ok); white-space: nowrap; }
+
+  /* Full-screen result */
+  #result { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px; text-align: center; cursor: pointer; }
+  #result.ok { background: var(--ok); color: #fff; }
+  #result.warn { background: #f59e0b; color: #241500; }
+  #result.bad { background: var(--bad); color: #fff; }
+  #result.busy { background: rgba(20,33,61,.92); color: #fff; }
+  #result .icon { font-size: 72px; line-height: 1; margin-bottom: 8px; }
+  #result .status { font-size: 15px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+  #result .big { font-size: 34px; font-weight: 800; margin: 10px 0 6px; line-height: 1.15; word-break: break-word; }
+  #result .detail { font-size: 17px; opacity: .95; }
+  #result .sub { font-size: 14px; opacity: .85; margin-top: 18px; }
+  #result .actions { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 340px; }
+  #result .actions .btn { margin: 0; background: #fff; color: var(--ink); }
+  .spinner { width: 46px; height: 46px; border: 5px solid rgba(255,255,255,.3); border-top-color: #fff;
+    border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .dup { border: 1px solid #f3c27a; background: var(--warn-bg); border-radius: 12px; padding: 12px; margin-top: 14px; }
+  .dup p { margin: 0 0 6px; font-weight: 600; color: var(--warn); }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="login" class="hidden">
+  <header><div class="event">Event Check-in</div><div class="who">Staff sign-in</div></header>
+  <main>
+    <form class="card" id="loginForm" autocomplete="on">
+      <h2>Staff sign-in</h2>
+      <label for="staffName">Your name</label>
+      <input id="staffName" required maxlength="60" placeholder="e.g. Anna (Gate 1)" autocomplete="name">
+      <label for="passcode">Staff passcode</label>
+      <input id="passcode" type="password" required autocomplete="current-password">
+      <button class="btn" type="submit" id="loginBtn">Start checking in</button>
+      <div class="error" id="loginError"></div>
+    </form>
+  </main>
+</section>
+
+<!-- ============ APP ============ -->
+<section id="app" class="hidden">
+  <header>
+    <div class="hrow">
+      <div style="min-width:0">
+        <div class="event" id="eventName">Event</div>
+        <div class="who">Signed in as <span id="whoName"></span></div>
+      </div>
+      <button class="linkbtn" id="logoutBtn">Sign out</button>
+    </div>
+    <div class="counter">
+      <div><b id="cIn">–</b>checked in</div>
+      <div><b id="cTotal">–</b>registered</div>
+      <div><b id="cWalk">–</b>walk-ins</div>
+    </div>
+  </header>
+  <nav>
+    <button data-tab="scan" class="active">Scan</button>
+    <button data-tab="search">Find name</button>
+    <button data-tab="walkin">Walk-in</button>
+  </nav>
+
+  <main>
+    <!-- Scan -->
+    <div id="tab-scan">
+      <div id="reader">Camera is off</div>
+      <div class="scanbar">
+        <button class="btn" id="camBtn">Start camera</button>
+        <button class="btn secondary" id="photoBtn">Take photo</button>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+      <div class="error" id="camError"></div>
+      <div class="divider">— or type the code from their email —</div>
+      <form class="row" id="manualForm">
+        <input id="manualId" placeholder="e.g. K7QX-29MD" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button class="btn small" type="submit" style="flex:0 0 auto">Check in</button>
+      </form>
+      <div id="fileReader" class="hidden"></div>
+    </div>
+
+    <!-- Search -->
+    <div id="tab-search" class="hidden">
+      <form class="card" id="searchForm">
+        <h2>Find by name</h2>
+        <div class="row">
+          <input id="searchQ" placeholder="Surname, first name or email" autocomplete="off">
+          <button class="btn small" type="submit" style="flex:0 0 auto">Search</button>
+        </div>
+        <div class="hint">For people who lost or forgot their QR code.</div>
+        <ul class="results" id="searchResults"></ul>
+      </form>
+    </div>
+
+    <!-- Walk-in -->
+    <div id="tab-walkin" class="hidden">
+      <form class="card" id="walkForm" autocomplete="off">
+        <h2>Register a walk-in</h2>
+        <div class="row">
+          <div><label for="w_surname">Surname</label><input id="w_surname" name="surname" required></div>
+          <div><label for="w_firstName">First name</label><input id="w_firstName" name="firstName" required></div>
+        </div>
+        <label for="w_email">Email address <span class="opt">(optional)</span></label>
+        <input id="w_email" name="email" type="email" inputmode="email">
+        <div class="row">
+          <div><label for="w_contact">Contact no. <span class="opt">(opt.)</span></label>
+            <input id="w_contact" name="contact" inputmode="tel" placeholder="09XXXXXXXXX"></div>
+          <div style="flex:0 0 96px"><label for="w_age">Age <span class="opt">(opt.)</span></label>
+            <input id="w_age" name="age" inputmode="numeric" pattern="\d{1,3}" maxlength="3"></div>
+        </div>
+        <label for="w_city">City of origin <span class="opt">(optional)</span></label>
+        <input id="w_city" name="city">
+        <label for="w_church">Church name <span class="opt">(optional)</span></label>
+        <input id="w_church" name="church">
+        <label for="w_qrSource">How did they hear about the event? <span class="opt">(optional)</span></label>
+        <input id="w_qrSource" name="qrSource" placeholder="On-site (walk-in)">
+        <div id="dupBox" class="dup hidden">
+          <p>Possible match already registered:</p>
+          <ul class="results" id="dupList" style="margin-top:0"></ul>
+          <button class="btn secondary" type="button" id="forceBtn">Different person — register anyway</button>
+        </div>
+        <button class="btn" type="submit" id="walkBtn">Register &amp; check in</button>
+        <div class="error" id="walkError"></div>
+      </form>
+    </div>
+  </main>
+</section>
+
+<!-- ============ RESULT OVERLAY ============ -->
+<div id="result" class="hidden" role="alert" aria-live="assertive"></div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem('checkin.' + k) || ''; } catch (e) { return mem[k] || ''; } },
+    set(k, v) { try { localStorage.setItem('checkin.' + k, v); } catch (e) { mem[k] = v; } },
+    del(k) { try { localStorage.removeItem('checkin.' + k); } catch (e) { delete mem[k]; } },
+  };
+  const mem = {};
+  let session = { staff: store.get('staff'), passcode: store.get('passcode') };
+
+  // ---------- API ----------
+  const inAppsScript = !!(window.google && google.script && google.script.run);
+  function callApi(action, extra) {
+    const payload = Object.assign({ action, staff: session.staff, passcode: session.passcode }, extra || {});
+    if (inAppsScript) {
+      return new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).api(payload));
+    }
+    if (!/^https?:\/\//.test(API_URL)) {
+      return Promise.reject(new Error('API_URL is not set. Open index.html and paste your Web App URL at the top.'));
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    return fetch(API_URL, {
+      method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // "simple" request: no CORS preflight
+    }).then(r => { if (!r.ok) throw new Error('Server error ' + r.status); return r.json(); })
+      .catch(err => { throw new Error(err.name === 'AbortError' ? 'The server took too long. Check the connection and try again.' :
+        (/Failed to fetch|NetworkError|Load failed/i.test(err.message) ? 'No connection to the server. Check internet and try again.' : err.message)); })
+      .finally(() => clearTimeout(timer));
+  }
+
+  // ---------- feedback: sound + vibration ----------
+  let audio;
+  function beep(kind) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const tones = kind === 'ok' ? [880, 1320] : kind === 'warn' ? [520, 520] : [220, 160];
+      tones.forEach((f, i) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.frequency.value = f; o.type = kind === 'bad' ? 'square' : 'sine';
+        g.gain.setValueAtTime(0.18, audio.currentTime + i * 0.16);
+        g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + i * 0.16 + 0.14);
+        o.connect(g); g.connect(audio.destination);
+        o.start(audio.currentTime + i * 0.16); o.stop(audio.currentTime + i * 0.16 + 0.15);
+      });
+    } catch (e) {}
+    try { navigator.vibrate && navigator.vibrate(kind === 'ok' ? 120 : [200, 80, 200]); } catch (e) {}
+  }
+
+  // ---------- helpers ----------
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function setStats(s) {
+    if (!s) return;
+    $('cIn').textContent = s.checkedIn; $('cTotal').textContent = s.registered; $('cWalk').textContent = s.walkins;
+  }
+  function personLine(p) { return [p.city, p.church].filter(Boolean).map(esc).join(' · '); }
+
+  // ---------- result overlay ----------
+  const overlay = $('result');
+  let overlayTimer = null, onOverlayClose = null;
+  function showResult(kind, html, autoCloseMs, onClose) {
+    clearTimeout(overlayTimer);
+    overlay.className = kind; overlay.innerHTML = html;
+    onOverlayClose = onClose || null;
+    if (autoCloseMs) overlayTimer = setTimeout(closeResult, autoCloseMs);
+  }
+  function closeResult() {
+    clearTimeout(overlayTimer);
+    overlay.className = 'hidden'; overlay.innerHTML = '';
+    const cb = onOverlayClose; onOverlayClose = null;
+    if (cb) cb();
+  }
+  overlay.addEventListener('click', e => {
+    if (overlay.classList.contains('busy')) return;
+    const act = e.target.closest('[data-act]');
+    if (act) { e.stopPropagation(); handleOverlayAction(act.dataset.act, act.dataset.arg); return; }
+    closeResult();
+  });
+  function busy(text) { showResult('busy', '<div class="spinner"></div><div class="detail">' + esc(text || 'Checking…') + '</div>'); }
+
+  // ---------- check-in ----------
+  function doCheckIn(code, source) {
+    busy('Checking in…');
+    return callApi('checkIn', { id: code }).then(res => {
+      if (!res.ok) return handleError(res);
+      setStats(res.stats);
+      const p = res.person || {};
+      if (res.status === 'checked_in') {
+        beep('ok');
+        showResult('ok', '<div class="icon">✓</div><div class="status">Checked in</div>' +
+          '<div class="big">' + esc(p.name) + '</div><div class="detail">' + personLine(p) + '</div>' +
+          '<div class="sub">' + esc(p.id) + (p.regType === 'Walk-in' ? ' · Walk-in' : '') + ' · tap to continue</div>', 2600, resumeScan);
+      } else if (res.status === 'already') {
+        beep('warn');
+        showResult('warn', '<div class="icon">!</div><div class="status">Already checked in</div>' +
+          '<div class="big">' + esc(p.name) + '</div><div class="detail">at ' + esc(p.checkedAt) +
+          (p.checkedBy ? ' by ' + esc(p.checkedBy) : '') + '</div>' +
+          '<div class="sub">Check their ID if this looks wrong · tap to continue</div>', 6000, resumeScan);
+      } else if (res.status === 'not_found') {
+        beep('bad');
+        showResult('bad', '<div class="icon">✕</div><div class="status">Not found</div>' +
+          '<div class="big">' + esc(res.id) + '</div><div class="detail">This code isn\'t on the list.</div>' +
+          '<div class="actions"><button class="btn" data-act="search">Search by name</button>' +
+          '<button class="btn" data-act="walkin">Register as walk-in</button>' +
+          '<button class="btn" data-act="close">Back to scanning</button></div>', 0, resumeScan);
+      } else {
+        beep('bad');
+        showResult('bad', '<div class="icon">✕</div><div class="status">Invalid code</div>' +
+          '<div class="detail">' + esc(res.message || 'This QR is not an attendee code.') + '</div>' +
+          '<div class="sub">tap to continue</div>', 3500, resumeScan);
+      }
+    }).catch(err => {
+      beep('bad');
+      showResult('bad', '<div class="icon">⚠</div><div class="status">Couldn\'t check in</div>' +
+        '<div class="detail">' + esc(err.message || err) + '</div>' +
+        '<div class="actions"><button class="btn" data-act="retry" data-arg="' + esc(code) + '">Try again</button>' +
+        '<button class="btn" data-act="close">Cancel</button></div>', 0, resumeScan);
+    });
+  }
+
+  function handleError(res) {
+    beep('bad');
+    if (res.auth === false) {
+      showResult('bad', '<div class="icon">✕</div><div class="status">Signed out</div><div class="detail">' +
+        esc(res.error) + '</div><div class="sub">tap to sign in again</div>', 0, logout);
+    } else {
+      showResult('bad', '<div class="icon">⚠</div><div class="status">Error</div><div class="detail">' +
+        esc(res.error || 'Something went wrong.') + '</div><div class="sub">tap to continue</div>', 0, resumeScan);
+    }
+  }
+
+  function handleOverlayAction(act, arg) {
+    if (act === 'retry') { doCheckIn(arg); return; }
+    onOverlayClose = null; closeResult();
+    if (act === 'search') switchTab('search');
+    else if (act === 'walkin') switchTab('walkin');
+    else resumeScan();
+  }
+
+  // ---------- camera scanning ----------
+  let scanner = null, scanning = false, paused = false, lastCode = '', lastAt = 0;
+  const QR_FORMAT = () => (window.Html5QrcodeSupportedFormats ? [Html5QrcodeSupportedFormats.QR_CODE] : undefined);
+
+  function startCamera() {
+    $('camError').textContent = '';
+    if (!window.Html5Qrcode) { $('camError').textContent = 'Scanner library failed to load. Check the internet connection and reload.'; return; }
+    if (scanning) { stopCamera(); return; }
+    $('reader').textContent = 'Starting camera…';
+    scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: QR_FORMAT(), verbose: false,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    scanner.start({ facingMode: 'environment' },
+      { fps: 12, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.72); return { width: s, height: s }; } },
+      onScan, () => {})
+      .then(() => { scanning = true; paused = false; $('camBtn').textContent = 'Stop camera'; })
+      .catch(err => {
+        $('reader').textContent = 'Camera is off';
+        $('camError').textContent = 'Couldn\'t open the camera (' + (err && err.name || err) +
+          '). Allow camera access in the browser, or use "Take photo" / type the code instead.';
+      });
+  }
+  function stopCamera() {
+    if (!scanner || !scanning) return;
+    scanner.stop().catch(() => {}).finally(() => {
+      scanning = false; paused = false; $('camBtn').textContent = 'Start camera'; $('reader').textContent = 'Camera is off';
+    });
+  }
+  function onScan(text) {
+    const now = Date.now();
+    if (paused || (text === lastCode && now - lastAt < 4000)) return;
+    lastCode = text; lastAt = now;
+    pauseScan();
+    doCheckIn(text);
+  }
+  function pauseScan() { if (scanning && !paused) { try { scanner.pause(true); paused = true; } catch (e) {} } }
+  function resumeScan() {
+    if (scanning && paused) { try { scanner.resume(); } catch (e) {} paused = false; }
+    lastAt = Date.now(); // ignore the same code for a few seconds after closing
+  }
+
+  // Photo fallback (works even where live camera is blocked)
+  let fileScanner = null;
+  $('photoBtn').addEventListener('click', () => $('photoInput').click());
+  $('photoInput').addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!window.Html5Qrcode) { $('camError').textContent = 'Scanner library failed to load.'; return; }
+    pauseScan();
+    fileScanner = fileScanner || new Html5Qrcode('fileReader', { formatsToSupport: QR_FORMAT(), verbose: false });
+    busy('Reading photo…');
+    fileScanner.scanFile(file, false).then(text => doCheckIn(text)).catch(() => {
+      beep('bad');
+      showResult('bad', '<div class="icon">✕</div><div class="status">No QR found</div>' +
+        '<div class="detail">Try again closer, with the whole code in the photo and the screen brightness up.</div>' +
+        '<div class="sub">tap to continue</div>', 0, resumeScan);
+    });
+  });
+
+  $('camBtn').addEventListener('click', startCamera);
+  $('manualForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('manualId').value.trim();
+    if (!v) return;
+    pauseScan();
+    doCheckIn(v).then(() => { $('manualId').value = ''; });
+  });
+
+  // ---------- search ----------
+  function renderPeople(list, ul, emptyText) {
+    if (!list.length) { ul.innerHTML = '<li><span class="meta">' + esc(emptyText) + '</span></li>'; return; }
+    ul.innerHTML = list.map(p =>
+      '<li><div style="min-width:0"><div class="nm">' + esc(p.surname) + ', ' + esc(p.firstName) + '</div>' +
+      '<div class="meta">' + [p.email, p.city, p.church].filter(Boolean).map(esc).join(' · ') +
+      (p.regType === 'Walk-in' ? ' · Walk-in' : '') + '</div></div>' +
+      (p.checkedAt ? '<span class="tag">✓ ' + esc(p.checkedAt) + '</span>'
+        : '<button class="btn small" type="button" data-checkin="' + esc(p.id) + '">Check in</button>') + '</li>'
+    ).join('');
+  }
+  $('searchForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const q = $('searchQ').value.trim();
+    const ul = $('searchResults');
+    if (q.length < 2) { ul.innerHTML = '<li><span class="meta">Type at least 2 letters.</span></li>'; return; }
+    ul.innerHTML = '<li><span class="meta">Searching…</span></li>';
+    callApi('search', { query: q }).then(res => {
+      if (!res.ok) return handleError(res);
+      renderPeople(res.results, ul, 'No one found. Try the surname only, or register them as a walk-in.');
+    }).catch(err => { ul.innerHTML = '<li><span class="meta" style="color:var(--bad)">' + esc(err.message) + '</span></li>'; });
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-checkin]');
+    if (!b) return;
+    const id = b.dataset.checkin;
+    doCheckIn(id).then(() => {
+      if ($('searchQ').value.trim().length >= 2 && !$('tab-search').classList.contains('hidden')) {
+        $('searchForm').requestSubmit ? $('searchForm').requestSubmit() : $('searchForm').dispatchEvent(new Event('submit'));
+      }
+    });
+  });
+
+  // ---------- walk-in ----------
+  function walkData() {
+    const d = {};
+    ['surname', 'firstName', 'email', 'contact', 'age', 'city', 'church', 'qrSource'].forEach(k => d[k] = $('w_' + k).value.trim());
+    return d;
+  }
+  function submitWalkIn(force) {
+    $('walkError').textContent = '';
+    $('walkBtn').disabled = true; $('forceBtn').disabled = true;
+    busy('Registering…');
+    callApi('register', { data: walkData(), force: !!force }).then(res => {
+      if (!res.ok) return handleError(res);
+      if (res.status === 'duplicate') {
+        closeResult(); beep('warn');
+        renderPeople(res.matches, $('dupList'), '');
+        $('dupBox').classList.remove('hidden');
+        $('dupBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (res.status === 'error') { closeResult(); $('walkError').textContent = res.message; return; }
+      setStats(res.stats); beep('ok');
+      const p = res.person;
+      $('walkForm').reset(); $('dupBox').classList.add('hidden');
+      showResult('ok', '<div class="icon">✓</div><div class="status">Registered &amp; checked in</div>' +
+        '<div class="big">' + esc(p.name) + '</div><div class="detail">' + personLine(p) + '</div>' +
+        '<div class="sub">Walk-in · ' + esc(p.id) + ' · tap to continue</div>', 3500);
+    }).catch(err => { closeResult(); $('walkError').textContent = err.message; })
+      .finally(() => { $('walkBtn').disabled = false; $('forceBtn').disabled = false; });
+  }
+  $('walkForm').addEventListener('submit', e => { e.preventDefault(); $('dupBox').classList.add('hidden'); submitWalkIn(false); });
+  $('forceBtn').addEventListener('click', () => submitWalkIn(true));
+
+  // ---------- tabs ----------
+  function switchTab(name) {
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    ['scan', 'search', 'walkin'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== name));
+    if (name !== 'scan') stopCamera();
+    if (name === 'search') setTimeout(() => $('searchQ').focus(), 50);
+  }
+  document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+  // ---------- login ----------
+  function showLogin(msg) {
+    $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+    $('staffName').value = session.staff || '';
+    $('loginError').textContent = msg || '';
+  }
+  function enterApp(res) {
+    $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+    $('eventName').textContent = res.event || 'Event Check-in';
+    document.title = (res.event || 'Event') + ' — Check-in';
+    $('whoName').textContent = session.staff;
+    setStats(res.stats);
+  }
+  function logout() {
+    stopCamera(); store.del('passcode'); session.passcode = ''; showLogin();
+  }
+  $('logoutBtn').addEventListener('click', logout);
+  $('loginForm').addEventListener('submit', e => {
+    e.preventDefault();
+    session = { staff: $('staffName').value.trim(), passcode: $('passcode').value };
+    $('loginBtn').disabled = true; $('loginError').textContent = '';
+    callApi('verify').then(res => {
+      if (!res.ok) { $('loginError').textContent = res.error; return; }
+      store.set('staff', session.staff); store.set('passcode', session.passcode);
+      $('passcode').value = '';
+      enterApp(res);
+    }).catch(err => { $('loginError').textContent = err.message; })
+      .finally(() => { $('loginBtn').disabled = false; });
+  });
+
+  // Refresh counts every 30 s while visible (other gates are checking people in too)
+  setInterval(() => {
+    if (document.hidden || $('app').classList.contains('hidden') || overlay.className !== 'hidden') return;
+    callApi('stats').then(res => res.ok && setStats(res.stats)).catch(() => {});
+  }, 30000);
+
+  // ---------- start ----------
+  if (session.staff && session.passcode) {
+    callApi('verify').then(res => res.ok ? enterApp(res) : showLogin(res.error))
+      .catch(err => showLogin(err.message));
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>
